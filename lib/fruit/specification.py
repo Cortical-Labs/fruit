@@ -82,10 +82,23 @@ class InfoTable(AreaOffset):
         super(InfoTable, self).__init__(name)
         self.entries = entries
 
-class MultiValue(AreaOffset):
-    """ Multi-value area. Currently no decoding is implemented. """
+# class MultiEntrySpec(EntrySpec):
+#     """ Multi-value area entry base class """
+#     name = None # type: str
+#     def __init__(self, name): # type: (str) -> None
+#         self.name = name
+
+class XilinxMAC(EntrySpec):
+    """ Xilinx MAC address """
+    type_id = 0xD2
     pass
 
+class MultiValue(AreaOffset):
+    """ Multi-value area. """
+    entries = None # type: Tuple[EntrySpec, ...]
+    def __init__(self, name, entries): # type: (str, Tuple[EntrySpec, ...]) -> None
+        super(MultiValue, self).__init__(name)
+        self.entries = entries
 
 FRU_EPOCH_SEC = 820454400 # 1996-01-01 00:00 UTC
 # }}}
@@ -121,7 +134,9 @@ FRU_SPEC = (
             U16Str("fru"), # This disagrees with spec for board.fru, which is L1Str
             OemStrList("oem"),
         )),
-        MultiValue("multi"),
+        MultiValue("multi", (
+            XilinxMAC("xilinx_mac"),
+        )),
         AreaByte("padding", 0, False, False),
     ) # type: Tuple[AreaSpec, ...]
 

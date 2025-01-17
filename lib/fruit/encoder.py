@@ -6,6 +6,7 @@ from .utils         import *
 __all__ = [ "Encoder", "encode" ]
 
 import binascii, datetime, codecs
+from functools import reduce
 
 MYPY = False
 if MYPY:
@@ -79,6 +80,7 @@ class Encoder(object):
         self.entry_encoders[L1Str]=self.encode_l1str
         self.entry_encoders[U16Str]=self.encode_u16str
         self.entry_encoders[OemStrList]=self.encode_oem
+        self.entry_encoders[XilinxMAC]=self.encode_mac
 
     lang      = None # type: int
     msgprefix = None # type: str
@@ -132,6 +134,10 @@ class Encoder(object):
             dt = dt >> 8
         return ret
 
+    def encode_mac(self, spec, cfg): # type: (EntrySpec, Optional[EntryValue]) -> bytearray
+        ret = bytearray([0xDA, 0x10, 0x00, 0x01]) + bytearray(map(lambda x: int(x,16), cfg.split(u':')))
+        return ret
+    
     def encode_str(self, spec, cfg, lang): # type: (EntrySpec, Optional[EntryValue], int) -> bytearray
         if cfg is None:
             cfg = u""
@@ -264,6 +270,26 @@ class Encoder(object):
         return ret, areas
     # }}}
 
+    def encode_multi_header(self, type, data):
+        def checksum(data):
+            return 0x100 - (sum(data) & 0xFF)
+        
+        header = bytearray([type, 0x02, len(data), checksum(data)])
+        header.append(checksum(header))
+        return header + data
+        
+    def encode_multi_value(self, spec, cfg): # type: (AreaOffset, AreaValue) -> bytearray
+        assert isinstance(cfg, dict) or isinstance(cfg, OrderedDict)
+        assert isinstance(spec, MultiValue)
+        blocks = []
+        for entry in spec.entries:
+            data = self.entry_encoders[type(entry)](entry, cfg.get(entry.name, None))
+            block = self.encode_multi_header(0xD2, data)
+            blocks.append(block)
+        blocks[-1][1] |= 0x80 # mark last block
+        blocks[-1][4] = (blocks[-1][4] - 0x80) & 0xFF # fixup checksum
+        return reduce(lambda x, y: x + y, blocks)
+    
     def encode(self, cfg): # type: (Union[OrderedDict[str, AreaValue], Dict[str, AreaValue]]) -> bytearray
         ret, areas = self.prepare_header(cfg.get("header", {}))
         i = 0
@@ -276,7 +302,9 @@ class Encoder(object):
             if len(area_cfg) == 0:
                 continue
             pos = len(ret)
-            if isinstance(area.spec, InfoTable) or not (
+            if isinstance(area.spec, MultiValue):
+                ret += self.encode_multi_value(area.spec, area_cfg)
+            elif isinstance(area.spec, InfoTable) or (
                     isinstance(cfg, dict) or isinstance(cfg, OrderedDict) ):
                 ret += self.encode_info_table(area.spec, area_cfg)
             else:

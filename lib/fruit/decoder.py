@@ -80,6 +80,7 @@ class Decoder(object):
         self.entry_decoders = dict()
         self.entry_decoders[Byte]       = self.decode_byte
         self.entry_decoders[Date]       = self.decode_date
+        self.entry_decoders[XilinxMAC]  = self.decode_mac
         self.entry_decoders[Str]        = self.decode_str
         self.entry_decoders[OemStrList] = self.decode_oem
 
@@ -118,6 +119,9 @@ class Decoder(object):
         epoch   = minutes * 60 + FRU_EPOCH_SEC
         d = datetime.datetime.fromtimestamp(epoch, UTC)
         return 3, d
+
+    def decode_mac(self, spec, data):
+        return 1, "Not implemented yet"
 
     def decode_str(self, spec, data): # type: (EntrySpec, bytearray) -> Tuple[int, EntryValue]
         return self.decode_str2(spec, data)
@@ -172,7 +176,8 @@ class Decoder(object):
             if isinstance(entry, Lang):
                 assert isinstance(v, int)
                 self.lang = v
-        assert len(data) == 0
+        if len(data) != 0:
+            print(f"Nonzero data {data}!\n")
         self.msgprefix = None # type: ignore
         self.lang = None # type: ignore
         return out
@@ -217,8 +222,15 @@ class Decoder(object):
         l = self.decode_area_len(spec, data)
         return self.area_hexdump(data[:l])
 
+    def decode_multi_header(self, data):
+        assert len(data) >= 5
+        return { "type": data[0], "format": data[1]&0x3, "eol": (data[1]&0x80)==0x80, "length": data[2], "record_checksum": data[3], "header_checksum": data[4], "packet": data[5:5+data[2]] }
+
     def decode_multivalue(self, spec, data): # type: (AreaSpec, bytearray) -> Tuple[int, AreaValue]
-        self.warning("No decoding of multivalue data is performed, just returning hexdump of remaining data")
+        assert isinstance(spec, MultiValue)
+        
+        print(self.decode_multi_header(data))
+
         return self.area_hexdump(data)
     # }}}
 
